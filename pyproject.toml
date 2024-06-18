@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "scoreboard"
+version = "0.1.0"
+description = ""
+authors = ["Clemens <clemens@bb5.social>"]
+#readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "~3.11"
+rpi-ws281x = "*"
+fastapi = "*"
+toml = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
