@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `setClock` ability to set time (#1)
+- Access-Control-Allow-Origin Header
 
 ## [0.1.0] - 2024-06-15
 

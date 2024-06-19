@@ -7,6 +7,7 @@ import subprocess
 from rpi_ws281x import PixelStrip, Color
 from fastapi import FastAPI, BackgroundTasks, openapi
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import (
     get_redoc_html,
     get_swagger_ui_html,
@@ -251,6 +252,18 @@ if __name__ == '__main__':
     scoreboardVersion = data["tool"]["poetry"]["version"]
     app = FastAPI(title="Scoreboard", version=scoreboardVersion, docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory="static"), name="static")
+    origins = [
+        "http://172.17.17.1:7000",
+        "http://172.17.17.1",
+        "http://scoreboard",
+        "http://localhost",
+        "http://localhost:7000",
+        "http://127.0.0.1:3000",
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+    )
 
     @app.get("/set/inning/{count}", summary="set Inning", description="set Inning to given value", responses={})
     def inningapi(count: str):
