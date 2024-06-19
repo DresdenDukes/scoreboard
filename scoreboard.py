@@ -3,6 +3,7 @@ import time, datetime
 import math
 import uvicorn
 import toml
+import subprocess
 from rpi_ws281x import PixelStrip, Color
 from fastapi import FastAPI, BackgroundTasks, openapi
 from fastapi.staticfiles import StaticFiles
@@ -229,6 +230,11 @@ def clockLoop(strip: PixelStrip):
         strip.setPixelColor(CLOCK_SECONDS_DOT, Color(0, 0, 0))
         strip.show()
 
+def setClock(hour: int, minute: int):
+    if hour >= 0 and hour < 24 and minute >= 0 and minute < 60:
+       command = f"sudo date --set {hour}:{minute}"
+       subprocess.run(["sudo", "/usr/bin/date", "--set", f"{hour}:{minute}"])
+
 
 if __name__ == '__main__':
 
@@ -317,8 +323,11 @@ if __name__ == '__main__':
         setStrikes(0, strip)
         setOuts(0, strip)
 
+    @app.get("/set/clock/{hour}/{minute}", summary="set time", description="set time")
+    def clockapi(hour: int, minute: int):
+        setClock(hour, minute)
 
-    @app.get("/")
+    @app.get("/", include_in_schema=False)
     def defaultpage():
         return "see /docs"
 
