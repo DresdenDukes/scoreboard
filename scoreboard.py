@@ -233,8 +233,8 @@ def clockLoop(strip: PixelStrip):
 
 def setClock(hour: int, minute: int):
     if hour >= 0 and hour < 24 and minute >= 0 and minute < 60:
-       command = f"sudo date --set {hour}:{minute}"
-       subprocess.run(["sudo", "/usr/bin/date", "--set", f"{hour}:{minute}"])
+        command = f"sudo date --set {hour}:{minute}"
+        subprocess.run(["sudo", "/usr/bin/date", "--set", f"{hour}:{minute}"])
 
 
 if __name__ == '__main__':
