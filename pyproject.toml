@@ -10,6 +10,7 @@ package-mode = false
 python = "~3.11"
 Adafruit-PCA9685 = "*"
 fastapi = "*"
+uvicorn = "*"
 toml = "*"
 
 [build-system]
