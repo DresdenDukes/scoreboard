@@ -68,7 +68,7 @@ def setNumber(number: str, address, offset: int) -> None:
     segment = _getSegment(address)
     numberValues = {
         "0": [1,2,3,4,5,6],
-        "1": [1,2],
+        "1": [2,3],
         "2": [1,2,4,5,7],
         "3": [1,2,3,4,7],
         "4": [2,3,6,7],
@@ -88,12 +88,12 @@ def setNumber(number: str, address, offset: int) -> None:
     }
     pixels = numberValues.get(number, [])
 
-    for x in range(1, 7):
+    for x in range(1, 8):
         if number != "x" and x in pixels:
             onOff = SERVO_ON
         else:
             onOff = SERVO_OFF
-        segment.set_pwm(n+offset, 0, onOff)
+        segment.set_pwm(x+offset, 0, onOff)
         time.sleep(SERVO_SLEEP)
 
 
@@ -150,18 +150,18 @@ def setOuts(out: int):
 
     segment = _getSegment(ADDR_O)
     if out > 0:
-        segment.set_pwm(4, 0, SERVO_ON)
+        segment.set_pwm(6, 0, SERVO_ON)
         time.sleep(SERVO_SLEEP)
         if out > 1:
-            segment.set_pwm(5, 0, SERVO_ON)
+            segment.set_pwm(7, 0, SERVO_ON)
             time.sleep(SERVO_SLEEP)
         else:
-            segment.set_pwm(5, 0, SERVO_OFF)
+            segment.set_pwm(7, 0, SERVO_OFF)
             time.sleep(SERVO_SLEEP)
     else:
-        segment.set_pwm(5, 0, SERVO_OFF)
+        segment.set_pwm(7, 0, SERVO_OFF)
         time.sleep(SERVO_SLEEP)
-        segment.set_pwm(4, 0, SERVO_OFF)
+        segment.set_pwm(6, 0, SERVO_OFF)
         time.sleep(SERVO_SLEEP)
 
 
