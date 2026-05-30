@@ -1,6 +1,6 @@
 # scoreboard
 
-A server to control a scoreboard
+A server to control a scoreboard ([Video on YouTube](https://youtu.be/3grEa7r0euY))
 
 there is also a [scoreboard-gui](https://github.com/DresdenDukes/scoreboard-gui) for a more user friendly interface.
 
