@@ -135,13 +135,18 @@ def setStrikes(strikes: int):
     segment = _getSegment(ADDR_O)
     if strikes > 0:
         segment.set_pwm(4, 0, SERVO_ON)
+        time.sleep(SERVO_SLEEP)
         if strikes > 1:
             segment.set_pwm(5, 0, SERVO_ON)
+            time.sleep(SERVO_SLEEP)
         else:
             segment.set_pwm(5, 0, SERVO_OFF)
+            time.sleep(SERVO_SLEEP)
     else:
         segment.set_pwm(5, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
         segment.set_pwm(4, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
 
 
 def setOuts(out: int):
