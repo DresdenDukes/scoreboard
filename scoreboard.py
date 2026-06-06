@@ -3,8 +3,10 @@ import time, datetime
 import math
 import uvicorn
 import toml
+import json
 import subprocess
-from rpi_ws281x import PixelStrip, Color
+import Adafruit_PCA9685
+#from rpi_ws281x import PixelStrip, Color
 from fastapi import FastAPI, BackgroundTasks, openapi
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,179 +16,200 @@ from fastapi.openapi.docs import (
     get_swagger_ui_oauth2_redirect_html,
 )
 
-# LED strip configuration:
-LED_COUNT = 150       # Number of LED pixels.
-LED_PIN = 10          # GPIO pin connected to the pixels (18 uses PWM - 10 uses SPI /dev/spidev0.0).
-LED_FREQ_HZ = 800000  # LED signal frequency in hertz (usually 800khz)
-LED_DMA = 10          # DMA channel to use for generating signal (try 10)
-LED_BRIGHTNESS = 255  # Set to 0 for darkest and 255 for brightest
-LED_INVERT = False    # True to invert the signal (when using NPN transistor level shift)
-LED_CHANNEL = 0       # set to '1' for GPIOs 13, 19, 41, 45 or 53
-
-
-GUEST_TEN_OFFSET = 60
-GUEST_ONE_OFFSET = 37
-HOME_ONE_OFFSET = 83
-HOME_TEN_OFFSET = 106
-INNING_OFFSET = 129
-CLOCK_SECONDS_DOT = INNING_OFFSET + 10
-
-BALLS_OFFSET = 12
-STRIKES_OFFSET = 22
-OUT_OFFSET = 32
-
-# default color
-DEF_R = 0
-DEF_G = 255
-DEF_B = 0
+ADDR_H = 0x44
+ADDR_G = 0x60
+ADDR_O = 0x51
+# pwm_home = Adafruit_PCA9685.PCA9685(address=ADDR_G, busnum=1)
+# pwm_guest = Adafruit_PCA9685.PCA9685(address=ADDR_G, busnum=1)
+# pwm_out = Adafruit_PCA9685.PCA9685(address=ADDR_O, busnum=1)
+SERVO_OFF = 150
+SERVO_ON = 600
+SERVO_SLEEP = 0.5
 
 
 global clockMode
 clockMode = False
 
+global state
+state = {
+    "home": 0,
+    "guest": 0,
+    "balls": 0,
+    "strikes": 0,
+    "out": 0,
+}
 
-def colorWipe(strip, color, wait_ms=50):
-    """Wipe color across display a pixel at a time."""
-    for i in range(strip.numPixels()):
-        strip.setPixelColor(i, color)
-        strip.show()
-        time.sleep(wait_ms / 1000.0)
+def _getSegment(address):
+    return Adafruit_PCA9685.PCA9685(address=address, busnum=1)
 
 
-def setInning(strip: PixelStrip, color: Color, number: str, offset: int) -> None:
-    """display given number (or letter) on innnig segment
+def getState():
+    global state
+    stateJson = json.dumps(state)
+    return stateJson
 
-    offset: (int) how many pixel before this segment
-    """
-    inningValues = {
-        "0": [1,2,3,4,5,6,8,9,11,12,13,14],
-        "1": [5,6,8,9],
-        "2": [3,4,5,6,11,12,13,14,15,16],
-        "3": [3,4,5,6,8,9,11,12,15,16],
-        "4": [1,2,5,6,8,9,15,16],
-        "5": [1,2,3,4,8,9,11,12,15,16],
-        "6": [1,2,3,4,8,9,11,12,13,14,15,16],
-        "7": [3,4,5,6,8,9,10],
-        "8": [1,2,3,4,5,6,8,9,11,12,13,14,15,16],
-        "9": [1,2,3,4,5,6,8,9,11,12,15,16],
-        "L": [1,2,11,12,13,14],
-    }
-    pixels = inningValues.get(number, [])
 
-    # clear segment
-    for i in range(1, 17):
-        strip.setPixelColor(i+offset, Color(0,0,0))
-    # set new value
-    for i in pixels:
-        strip.setPixelColor(i+offset, color)
-    strip.show()
+def setHomeTenNumber(number: str) -> None:
+    setNumber(number, ADDR_H, 7)
 
-def setNumber(strip: PixelStrip, color: Color, number: str, offset: int) -> None:
+def setHomeNumber(number: str) -> None:
+    setNumber(number, ADDR_H, 0)
+
+def setGuestTenNumber(number: str) -> None:
+    setNumber(number, ADDR_G, 7)
+
+def setGuestNumber(number: str) -> None:
+    setNumber(number, ADDR_G, 0)
+
+def setNumber(number: str, address, offset: int) -> None:
     """display given number (or letter) on number segment
-
-    offset: (int) how many pixel before this segment
     """
+
+    segment = _getSegment(address)
     numberValues = {
-        "0": [1,2,3,5,6,7,8,9,10,11,12,13,15,16,17,21,22,23],
-        "1": [1,2,3,5,6,7],
-        "2": [5,6,7,8,9,10,15,16,17,18,19,20,21,22,23],
-        "3": [1,2,3,5,6,7,8,9,10,18,19,20,21,22,23],
-        "4": [1,2,3,5,6,7,11,12,13,18,19,20],
-        "5": [1,2,3,8,9,10,11,12,13,18,19,20,21,22,23],
-        "6": [1,2,3,8,9,10,11,12,13,15,16,17,18,19,20,21,22,23],
-        "7": [1,2,3,5,6,7,8,9,10],
-        "8": [1,2,3,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,21,22,23],
-        "9": [1,2,3,5,6,7,8,9,10,11,12,13,18,19,20,21,22,23],
-        "H": [1,2,3,5,6,7,11,12,13,15,16,17,18,19,20],
-        "E": [8,9,10,11,12,13,15,16,17,18,19,20,21,22,23],
-        "L": [11,12,13,15,16,17,21,22,23],
-        "O": [1,2,3,5,6,7,8,9,10,11,12,13,15,16,17,21,22,23],
+        "0": [1,2,3,4,5,6],
+        "1": [2,3],
+        "2": [1,2,4,5,7],
+        "3": [1,2,3,4,7],
+        "4": [2,3,6,7],
+        "5": [1,3,4,6,7],
+        "6": [1,3,4,5,6,7],
+        "7": [1,2,3],
+        "8": [1,2,3,4,5,6,7],
+        "9": [1,2,3,4,6,7],
+        "H": [2,3,5,6,7],
+        "E": [1,4,5,6,7],
+        "L": [4,5,6],
+        "O": [1,2,3,4,5,6],
+        "P": [1,2,5,6,7],
+        "A": [1,2,3,5,6],
+        "Y": [2,3,4,6,7],
+        "B": [1,2,3,4,5,6,7],
     }
     pixels = numberValues.get(number, [])
 
-    # clear segment
-    for i in range(1, 24):
-        strip.setPixelColor(i+offset, Color(0,0,0))
-    # set new value
-    for i in pixels:
-        fixedPixel = i+offset
-        if offset == HOME_TEN_OFFSET and i>14:
-            # one pixel missing 
-            fixedPixel = fixedPixel-1
-        strip.setPixelColor(fixedPixel, color)
-    strip.show()
+    for x in range(1, 8):
+        if number != "x" and x in pixels:
+            onOff = SERVO_ON
+        else:
+            onOff = SERVO_OFF
+        segment.set_pwm(x+offset, 0, onOff)
+        time.sleep(SERVO_SLEEP)
 
 
-def setBalls(balls: int, stripe: PixelStrip):
-    setLineDots(balls, stripe, Color(0,255,0), BALLS_OFFSET)
+def setBalls(balls: int):
+    global state
+    state["balls"] = balls
 
-def setStrikes(strikes: int, stripe: PixelStrip):
-    setLineDots(strikes, stripe, Color(255,0,0), STRIKES_OFFSET)
-
-def setOuts(out: int, stripe: PixelStrip):
-    setLineDots(out, stripe, Color(255,0,20), OUT_OFFSET)
-
-
-def setLineDots(count: int, stripe: PixelStrip, color: Color, offset: int):
-    """set balls
-    
-    balls: allowed values: 0, 1, 2, 3
-    """
-    off = Color(0,0,0)
-
-    strip.setPixelColor(offset, off)
-    strip.setPixelColor(offset+2, off)
-    strip.setPixelColor(offset+4, off)
-
-    if count > 0:
-        strip.setPixelColor(offset, color)
-
-    if count > 1:
-        strip.setPixelColor(offset+2, color)
-
-    if count > 2:
-        strip.setPixelColor(offset+4, color)
-
-    strip.show()
+    segment = _getSegment(ADDR_O)
+    if balls > 0:
+        segment.set_pwm(1, 0, SERVO_ON)
+        time.sleep(SERVO_SLEEP)
+        if balls > 1:
+            segment.set_pwm(2, 0, SERVO_ON)
+            time.sleep(SERVO_SLEEP)
+            if balls > 2:
+                segment.set_pwm(3, 0, SERVO_ON)
+                time.sleep(SERVO_SLEEP)
+            else:
+                segment.set_pwm(3, 0, SERVO_OFF)
+                time.sleep(SERVO_SLEEP)
+        else:
+            segment.set_pwm(3, 0, SERVO_OFF)
+            time.sleep(SERVO_SLEEP)
+            segment.set_pwm(2, 0, SERVO_OFF)
+            time.sleep(SERVO_SLEEP)
+    else:
+        segment.set_pwm(3, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
+        segment.set_pwm(2, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
+        segment.set_pwm(1, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
 
 
-def clearBoard(strip: PixelStrip):
-    """turn off all pixels"""
-    colorWipe(strip, Color(0, 0, 0), 0)
+def setStrikes(strikes: int):
+    global state
+    state["strikes"] = strikes
+
+    segment = _getSegment(ADDR_O)
+    if strikes > 0:
+        segment.set_pwm(4, 0, SERVO_ON)
+        time.sleep(SERVO_SLEEP)
+        if strikes > 1:
+            segment.set_pwm(5, 0, SERVO_ON)
+            time.sleep(SERVO_SLEEP)
+        else:
+            segment.set_pwm(5, 0, SERVO_OFF)
+            time.sleep(SERVO_SLEEP)
+    else:
+        segment.set_pwm(5, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
+        segment.set_pwm(4, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
 
 
-def init(strip: PixelStrip, color: Color, wait: int = 2):
+def setOuts(out: int):
+    global state
+    state["out"] = out
+
+    segment = _getSegment(ADDR_O)
+    if out > 0:
+        segment.set_pwm(6, 0, SERVO_ON)
+        time.sleep(SERVO_SLEEP)
+        if out > 1:
+            segment.set_pwm(7, 0, SERVO_ON)
+            time.sleep(SERVO_SLEEP)
+        else:
+            segment.set_pwm(7, 0, SERVO_OFF)
+            time.sleep(SERVO_SLEEP)
+    else:
+        segment.set_pwm(7, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
+        segment.set_pwm(6, 0, SERVO_OFF)
+        time.sleep(SERVO_SLEEP)
+
+
+def clearBoard():
+    # switch everything to OFF
+    setOuts(0)
+    setStrikes(0)
+    setBalls(0)
+    setHomeTenNumber("x")
+    setHomeNumber("x")
+    setGuestTenNumber("x")
+    setGuestNumber("x")
+
+
+def init(wait: int = 2):
     """display init sequence
 
     write "hello" and show loading bar below
     """
-    clearBoard(strip)
+    clearBoard()
 
-    setNumber(strip, color, "H", HOME_TEN_OFFSET)
-    setNumber(strip, color, "E", HOME_ONE_OFFSET)
-    setInning(strip, color, "L", INNING_OFFSET)
-    setNumber(strip, color, "L", GUEST_TEN_OFFSET)
-    setNumber(strip, color, "O", GUEST_ONE_OFFSET)
+    setHomeTenNumber("H")
+    setHomeNumber("I")
     time.sleep(wait)
 
-    setBalls(1, strip)
+    setBalls(1)
     time.sleep(wait)
-    setBalls(2, strip)
+    setBalls(2)
     time.sleep(wait)
-    setBalls(3, strip)
-    time.sleep(wait)
-
-    setStrikes(1, strip)
-    time.sleep(wait)
-    setStrikes(2, strip)
+    setBalls(3)
     time.sleep(wait)
 
-    setOuts(1, strip)
+    setStrikes(1)
     time.sleep(wait)
-    setOuts(2, strip)
+    setStrikes(2)
     time.sleep(wait)
 
-    clearBoard(strip)
+    setOuts(1)
+    time.sleep(wait)
+    setOuts(2)
+    time.sleep(wait*2)
+
+    clearBoard()
 
 
 def _getSingleNumbers(number) -> tuple[int, int]:
@@ -194,8 +217,8 @@ def _getSingleNumbers(number) -> tuple[int, int]:
     ten = math.floor(number/10)
     return ten, one
 
-def clockDisplay(strip: PixelStrip, color: Color):
-    """ display current time and blink seconds dot (once)
+def clockDisplay():
+    """ display current time
     """
     now = datetime.datetime.now()
     hour = now.hour
@@ -205,31 +228,19 @@ def clockDisplay(strip: PixelStrip, color: Color):
     minuteOne = minute % 10
     minuteTen = math.floor(minute/10)
 
-    setNumber(strip, color, str(hourTen), HOME_TEN_OFFSET)
-    setNumber(strip, color, str(hourOne), HOME_ONE_OFFSET)
-    setNumber(strip, color, str(minuteTen), GUEST_TEN_OFFSET)
-    setNumber(strip, color, str(minuteOne), GUEST_ONE_OFFSET)
+    setHomeTenNumber(str(hourTen))
+    setHomeNumber(str(hourOne))
+    setGuestTenNumber(str(minuteTen))
+    setGuestNumber(str(minuteOne))
 
-    # blink seconds dot
-    strip.setPixelColor(CLOCK_SECONDS_DOT, color)
-    strip.show()
-    time.sleep(0.05)
-    strip.setPixelColor(CLOCK_SECONDS_DOT, Color(0, 0, 0))
-    strip.show()
-    time.sleep(0.95)
+    time.sleep(5)
 
 
-def clockLoop(strip: PixelStrip):
+def clockLoop():
     global clockMode
     while clockMode:
-        clockDisplay(strip, defaultColor)
-    else:
-        setNumber(strip, defaultColor, "x", HOME_TEN_OFFSET)
-        setNumber(strip, defaultColor, "x", HOME_ONE_OFFSET)
-        setNumber(strip, defaultColor, "x", GUEST_TEN_OFFSET)
-        setNumber(strip, defaultColor, "x", GUEST_ONE_OFFSET)
-        strip.setPixelColor(CLOCK_SECONDS_DOT, Color(0, 0, 0))
-        strip.show()
+        clockDisplay()
+
 
 def setClock(hour: int, minute: int):
     if hour >= 0 and hour < 24 and minute >= 0 and minute < 60:
@@ -239,14 +250,7 @@ def setClock(hour: int, minute: int):
 
 if __name__ == '__main__':
 
-    # Create NeoPixel object with appropriate configuration.
-    strip = PixelStrip(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL)
-    # Intialize the library (must be called once before other functions).
-    strip.begin()
-
-    defaultColor = Color(DEF_R, DEF_G, DEF_B)
-
-    init(strip, defaultColor)
+    #init()
 
     data = toml.load("./pyproject.toml")
     scoreboardVersion = data["tool"]["poetry"]["version"]
@@ -269,30 +273,32 @@ if __name__ == '__main__':
     def inningapi(count: str):
         global clockMode
         clockMode = False
-        setInning(strip, defaultColor, count, INNING_OFFSET)
+        # setInning(count)
 
     @app.get("/set/balls/{count}", summary="set Balls", description="set balls indicators to given value", responses={})
     def ballsapi(count: int):
         global clockMode
         clockMode = False
-        setBalls(count, strip)
+        setBalls(count)
 
     @app.get("/set/strikes/{count}", summary="set Strikes", description="set strike indicators to given value", responses={})
     def strikesapi(count: int):
         global clockMode
         clockMode = False
-        setStrikes(count, strip)
+        setStrikes(count)
 
     @app.get("/set/outs/{count}", summary="set Outs", description="set out indicators to given value", responses={})
     def outsapi(count: int):
         global clockMode
         clockMode = False
-        setOuts(count, strip)
+        setOuts(count)
 
 
     @app.get("/set/home/{score}", summary="set home score", description="set Home score to given value", responses={})
     def homeapi(score: int):
         global clockMode
+        global state
+        state["home"] = score
         clockMode = False
         if score < 10:
             ten = "x"
@@ -300,45 +306,53 @@ if __name__ == '__main__':
         else:
             ten, one = _getSingleNumbers(score)
 
-        setNumber(strip, defaultColor, str(ten), HOME_TEN_OFFSET)
-        setNumber(strip, defaultColor, str(one), HOME_ONE_OFFSET)
+        setHomeTenNumber(str(ten))
+        setHomeNumber(str(one))
 
 
     @app.get("/set/guest/{score}", summary="set guest score", description="set Guest score to given value")
     def guestapi(score: int):
         global clockMode
+        global state
+        state["guest"] = score
         clockMode = False
         if score < 10:
             ten = "x"
             one = score
         else:
             ten, one = _getSingleNumbers(score)
-        setNumber(strip, defaultColor, str(ten), GUEST_TEN_OFFSET)
-        setNumber(strip, defaultColor, str(one), GUEST_ONE_OFFSET)
+
+        setGuestTenNumber(str(ten))
+        setGuestNumber(str(one))
+
 
     @app.get("/clock", summary="show current time", description="use home and guest to display current time", responses={})
     def clockapi(background_tasks: BackgroundTasks):
-        setInning(strip, defaultColor, "x", INNING_OFFSET)
         global clockMode
         if not clockMode:
             clockMode = True
-            background_tasks.add_task(clockLoop, strip)
+            background_tasks.add_task(clockLoop)
 
     @app.get("/startgame", summary="set everything to 0", description="set digits, balls strikes and outs to zero and disable clock", responses={})
     def startgameapi(background_tasks: BackgroundTasks):
-        setInning(strip, defaultColor, "0", INNING_OFFSET)
         global clockMode
         clockMode = False
         time.sleep(0.9)
         homeapi(0)
         guestapi(0)
-        setBalls(0, strip)
-        setStrikes(0, strip)
-        setOuts(0, strip)
+        setBalls(0)
+        setStrikes(0)
+        setOuts(0)
 
     @app.get("/set/clock/{hour}/{minute}", summary="set time", description="set time")
     def clockapi(hour: int, minute: int):
         setClock(hour, minute)
+
+
+    @app.get("/get/state", summary="get current state", description="get score and balls, strikes, out count")
+    def getstateapi():
+        return getState()
+
 
     @app.get("/", include_in_schema=False)
     def defaultpage():
@@ -399,24 +413,9 @@ if __name__ == '__main__':
 
     try:
         while True:
-            clockDisplay(strip, defaultColor)
-            # for i in tenpixels:
-            #     strip.setPixelColor(i, Color(0, 5, 0))
-            #     #strip.setBrightness(55)
-            # strip.show()
-            # time.sleep(1)
-            # for i in tenpixels:
-            #     strip.setPixelColor(i, Color(0, 55, 0))
-            #     #time.sleep(2)
-            #     #strip.setBrightness(5)
-            # strip.show()
-            # time.sleep(1)
+            clockDisplay()
 
-    #         #print('Color wipe animations.')
-    #         colorWipe(strip, Color(255, 0, 0), 0)  # Red wipe
-    #         colorWipe(strip, Color(0, 255, 0), 0)  # Green wipe
-    #         # colorWipe(strip, Color(0, 0, 255))  # Blue wipe
 
     except KeyboardInterrupt:
-        clearBoard(strip)
+        clearBoard()
         print("")

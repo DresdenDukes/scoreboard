@@ -1,24 +1,15 @@
 # scoreboard
 
-The pi is powered by a powerbank with 16.000mAh which is enough for more than 4 hours on a normal Raspberry Pi 3.
+A server to control a scoreboard ([Video on YouTube](https://youtu.be/3grEa7r0euY))
 
 there is also a [scoreboard-gui](https://github.com/DresdenDukes/scoreboard-gui) for a more user friendly interface.
 
 ## hardware
 
-- Pi Zero 2W
-- SEZO WS2812B LED stripe IP65 ([Shop](https://www.amazon.de/dp/B0BNN1TXBM))
+- Raspberry Pi 3 Model B Plus Rev 1.3 (might switch to Pi Zero 2W later)
+- 3x PCA9685
+- SG90 Servo Motors
 - Jumper wires ([Shop](https://www.amazon.de/dp/B01EV70C78))
-
-very basic and not accurate wiring
-
-![layout](./doc/layout.png)
-
-how it looks: 
-
-![scoreboard](./doc/scoreboard-on.JPG)
-
-[Video on YouTube](https://youtu.be/b5tLQOb58DA)
 
 
 ## pi setup
@@ -32,7 +23,7 @@ python3 -m venv /opt/pythonenv
 
 add `/opt/pythonenv/bin:` to PATH in /etc/profile
 
-give pi user access to SPI (Pin19) which is used ad data channel: `usermod -a -G spi -G gpio pi`
+give pi user access to I2C (Pin3 and 5, SDA and SCL): `usermod -a -G i2c pi`
 
 due to no real time clock we have to be able to set the time. add this line to `/etc/sudoers` to give the pi user the permission to change the time:
 ```
@@ -42,14 +33,14 @@ pi   ALL=(root) NOPASSWD: /usr/bin/date
 
 crontab pi user:
 ```
-@reboot cd /home/pi/examples && /opt/pythonenv/bin/poetry run python segments.py
+@reboot cd /home/pi/scoreboard && /opt/pythonenv/bin/poetry run python scoreboard.py
 @reboot sleep 40 && wget -q localhost:7000/clock -O /dev/null
 ```
 
 ## links
 
 here are some helpful links which provided useful information for us:
-- https://dordnung.de/raspberrypi-ledstrip/ws2812
-- https://github.com/jgarff/rpi_ws281x
+- https://tutorials-raspberrypi.de/mehrere-servo-motoren-steuern-raspberry-pi-pca9685/
+- https://tutorials-raspberrypi.de/raspberry-pi-gpios-erweitern-mittels-i2c-port-expander/
 - https://youtu.be/Z7xdRMfPbP8
 - https://gist.github.com/ysr23/c4a9d7185ed5c6d7ccfa31deead44070
